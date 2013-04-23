@@ -1,0 +1,738 @@
+<html>
+<head>
+<script type="text/javascript" src="http://code.jquery.com/jquery-1.9.1.min.js"></script>
+<script>
+    /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+    /*  SHA-1 implementation in JavaScript | (c) Chris Veness 2002-2010 | www.movable-type.co.uk      */
+    /*   - see http://csrc.nist.gov/groups/ST/toolkit/secure_hashing.html                             */
+    /*         http://csrc.nist.gov/groups/ST/toolkit/examples.html                                   */
+    /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+
+
+    var sha1 = (function () {
+
+        //
+        // function 'f' [§4.1.1]
+        //
+
+        function f(s, x, y, z) {
+            switch (s) {
+            case 0:
+                return (x & y) ^ (~x & z); // Ch()
+            case 1:
+                return x ^ y ^ z; // Parity()
+            case 2:
+                return (x & y) ^ (x & z) ^ (y & z); // Maj()
+            case 3:
+                return x ^ y ^ z; // Parity()
+            }
+        }
+
+        //
+        // rotate left (circular left shift) value x by n positions [§3.2.5]
+        //
+
+        function ROTL(x, n) {
+            return (x << n) | (x >>> (32 - n));
+        }
+
+        //
+        // hexadecimal representation of a number
+        //   (note toString(16) is implementation-dependant, and
+        //   in IE returns signed numbers when used on full words)
+        //
+
+        function toHexStr(n) {
+            var s = "",
+                v;
+            for (var i = 7; i >= 0; i--) {
+                v = (n >>> (i * 4)) & 0xf;
+                s += v.toString(16);
+            }
+            return s;
+        }
+
+        /**
+         * Generates SHA-1 hash of string
+         *
+         * @param {String} msg                String to be hashed
+         * @param {Boolean} [utf8encode=true] Encode msg as UTF-8 before generating hash
+         * @returns {String}                  Hash of msg as hex character string
+         */
+
+
+        return {
+            hash: function (msg, utf8encode) {
+                var i;
+
+                utf8encode = (typeof utf8encode === 'undefined') ? false : utf8encode;
+
+                // convert string to UTF-8, as SHA only deals with byte-streams
+                if (utf8encode) {
+                    msg = this.Utf8.encode(msg);
+                }
+
+                // constants [§4.2.1]
+                var K = [0x5a827999, 0x6ed9eba1, 0x8f1bbcdc, 0xca62c1d6];
+
+                // PREPROCESSING
+
+                msg += String.fromCharCode(0x80); // add trailing '1' bit (+ 0's padding) to string [§5.1.1]
+
+                // convert string msg into 512-bit/16-integer blocks arrays of ints [§5.2.1]
+                var l = msg.length / 4 + 2; // length (in 32-bit integers) of msg + 1 + appended length
+                var N = Math.ceil(l / 16); // number of 16-integer-blocks required to hold 'l' ints
+                var M = new Array(N);
+
+                for (i = 0; i < N; i++) {
+                    M[i] = new Array(16);
+                    for (var j = 0; j < 16; j++) { // encode 4 chars per integer, big-endian encoding
+                        M[i][j] = (msg.charCodeAt(i * 64 + j * 4) << 24) | (msg.charCodeAt(i * 64 + j * 4 + 1) << 16) |
+                        (msg.charCodeAt(i * 64 + j * 4 + 2) << 8) | (msg.charCodeAt(i * 64 + j * 4 + 3));
+                    } // note running off the end of msg is ok 'cos bitwise ops on NaN return 0
+                }
+                // add length (in bits) into final pair of 32-bit integers (big-endian) [§5.1.1]
+                // note: most significant word would be (len-1)*8 >>> 32, but since JS converts
+                // bitwise-op args to 32 bits, we need to simulate this by arithmetic operators
+                M[N - 1][14] = ((msg.length - 1) * 8) / Math.pow(2, 32);
+                M[N - 1][14] = Math.floor(M[N - 1][14]);
+                M[N - 1][15] = ((msg.length - 1) * 8) & 0xffffffff;
+
+                // set initial hash value [§5.3.1]
+                var H0 = 0x67452301;
+                var H1 = 0xefcdab89;
+                var H2 = 0x98badcfe;
+                var H3 = 0x10325476;
+                var H4 = 0xc3d2e1f0;
+
+                // HASH COMPUTATION [§6.1.2]
+
+                var W = new Array(80);
+                var a, b, c, d, e, t;
+
+                for (i = 0; i < N; i++) {
+
+                    // 1 - prepare message schedule 'W'
+                    for (t = 0; t < 16; t++) {
+                        W[t] = M[i][t];
+                    }
+                    for (t = 16; t < 80; t++) {
+                        W[t] = ROTL(W[t - 3] ^ W[t - 8] ^ W[t - 14] ^ W[t - 16], 1);
+                    }
+
+                    // 2 - initialise five working variables a, b, c, d, e with previous hash value
+                    a = H0;
+                    b = H1;
+                    c = H2;
+                    d = H3;
+                    e = H4;
+
+                    // 3 - main loop
+                    for (t = 0; t < 80; t++) {
+                        var s = Math.floor(t / 20); // seq for blocks of 'f' functions and 'K' constants
+                        var T = (ROTL(a, 5) + f(s, b, c, d) + e + K[s] + W[t]) & 0xffffffff;
+                        e = d;
+                        d = c;
+                        c = ROTL(b, 30);
+                        b = a;
+                        a = T;
+                    }
+
+                    // 4 - compute the new intermediate hash value
+                    H0 = (H0 + a) & 0xffffffff; // note 'addition modulo 2^32'
+                    H1 = (H1 + b) & 0xffffffff;
+                    H2 = (H2 + c) & 0xffffffff;
+                    H3 = (H3 + d) & 0xffffffff;
+                    H4 = (H4 + e) & 0xffffffff;
+                }
+
+                return toHexStr(H0) + toHexStr(H1) +
+                toHexStr(H2) + toHexStr(H3) + toHexStr(H4);
+            }
+        };
+
+
+    }());
+
+/*
+ *  jsaes version 0.1  -  Copyright 2006 B. Poettering
+ *
+ *  This program is free software; you can redistribute it and/or
+ *  modify it under the terms of the GNU General Public License as
+ *  published by the Free Software Foundation; either version 2 of the
+ *  License, or (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
+ *  02111-1307 USA
+ */
+
+/*
+ * http://point-at-infinity.org/jsaes/
+ *
+ * This is a javascript implementation of the AES block cipher. Key lengths 
+ * of 128, 192 and 256 bits are supported.
+ *
+ * The well-functioning of the encryption/decryption routines has been 
+ * verified for different key lengths with the test vectors given in 
+ * FIPS-197, Appendix C.
+ *
+ * The following code example enciphers the plaintext block '00 11 22 .. EE FF'
+ * with the 256 bit key '00 01 02 .. 1E 1F'.
+ *
+ *    AES_Init();
+ *
+ *    var block = new Array(16);
+ *    for(var i = 0; i < 16; i++)
+ *        block[i] = 0x11 * i;
+ *
+ *    var key = new Array(32);
+ *    for(var i = 0; i < 32; i++)
+ *        key[i] = i;
+ *
+ *    AES_ExpandKey(key);
+ *    AES_Encrypt(block, key);
+ *
+ *    AES_Done();
+ *
+ * Report bugs to: jsaes AT point-at-infinity.org
+ *
+ */
+
+/******************************************************************************/
+
+/* 
+   AES_Init: initialize the tables needed at runtime. Call this function
+   before the (first) key expansion.
+*/
+
+function AES_Init() {
+  AES_Sbox_Inv = new Array(256);
+  for(var i = 0; i < 256; i++)
+    AES_Sbox_Inv[AES_Sbox[i]] = i;
+  
+  AES_ShiftRowTab_Inv = new Array(16);
+  for(var i = 0; i < 16; i++)
+    AES_ShiftRowTab_Inv[AES_ShiftRowTab[i]] = i;
+
+  AES_xtime = new Array(256);
+  for(var i = 0; i < 128; i++) {
+    AES_xtime[i] = i << 1;
+    AES_xtime[128 + i] = (i << 1) ^ 0x1b;
+  }
+}
+
+/* 
+   AES_Done: release memory reserved by AES_Init. Call this function after
+   the last encryption/decryption operation.
+*/
+
+function AES_Done() {
+  delete AES_Sbox_Inv;
+  delete AES_ShiftRowTab_Inv;
+  delete AES_xtime;
+}
+
+/*
+   AES_ExpandKey: expand a cipher key. Depending on the desired encryption 
+   strength of 128, 192 or 256 bits 'key' has to be a byte array of length 
+   16, 24 or 32, respectively. The key expansion is done "in place", meaning 
+   that the array 'key' is modified.
+*/
+
+function AES_ExpandKey(key) {
+  var kl = key.length, ks, Rcon = 1;
+  switch (kl) {
+    case 16: ks = 16 * (10 + 1); break;
+    case 24: ks = 16 * (12 + 1); break;
+    case 32: ks = 16 * (14 + 1); break;
+    default: 
+      alert("AES_ExpandKey: Only key lengths of 16, 24 or 32 bytes allowed!");
+  }
+  for(var i = kl; i < ks; i += 4) {
+    var temp = key.slice(i - 4, i);
+    if (i % kl == 0) {
+      temp = new Array(AES_Sbox[temp[1]] ^ Rcon, AES_Sbox[temp[2]], 
+	AES_Sbox[temp[3]], AES_Sbox[temp[0]]); 
+      if ((Rcon <<= 1) >= 256)
+	Rcon ^= 0x11b;
+    }
+    else if ((kl > 24) && (i % kl == 16))
+      temp = new Array(AES_Sbox[temp[0]], AES_Sbox[temp[1]], 
+	AES_Sbox[temp[2]], AES_Sbox[temp[3]]);       
+    for(var j = 0; j < 4; j++)
+      key[i + j] = key[i + j - kl] ^ temp[j];
+  }
+}
+
+/* 
+   AES_Encrypt: encrypt the 16 byte array 'block' with the previously 
+   expanded key 'key'.
+*/
+
+function AES_Encrypt(block, key) {
+  var l = key.length;
+  AES_AddRoundKey(block, key.slice(0, 16));
+  for(var i = 16; i < l - 16; i += 16) {
+    AES_SubBytes(block, AES_Sbox);
+    AES_ShiftRows(block, AES_ShiftRowTab);
+    AES_MixColumns(block);
+    AES_AddRoundKey(block, key.slice(i, i + 16));
+  }
+  AES_SubBytes(block, AES_Sbox);
+  AES_ShiftRows(block, AES_ShiftRowTab);
+  AES_AddRoundKey(block, key.slice(i, l));
+}
+
+/* 
+   AES_Decrypt: decrypt the 16 byte array 'block' with the previously 
+   expanded key 'key'.
+*/
+
+function AES_Decrypt(block, key) {
+  var l = key.length;
+  AES_AddRoundKey(block, key.slice(l - 16, l));
+  AES_ShiftRows(block, AES_ShiftRowTab_Inv);
+  AES_SubBytes(block, AES_Sbox_Inv);
+  for(var i = l - 32; i >= 16; i -= 16) {
+    AES_AddRoundKey(block, key.slice(i, i + 16));
+    AES_MixColumns_Inv(block);
+    AES_ShiftRows(block, AES_ShiftRowTab_Inv);
+    AES_SubBytes(block, AES_Sbox_Inv);
+  }
+  AES_AddRoundKey(block, key.slice(0, 16));
+}
+
+/******************************************************************************/
+
+/* The following lookup tables and functions are for internal use only! */
+
+AES_Sbox = new Array(99,124,119,123,242,107,111,197,48,1,103,43,254,215,171,
+  118,202,130,201,125,250,89,71,240,173,212,162,175,156,164,114,192,183,253,
+  147,38,54,63,247,204,52,165,229,241,113,216,49,21,4,199,35,195,24,150,5,154,
+  7,18,128,226,235,39,178,117,9,131,44,26,27,110,90,160,82,59,214,179,41,227,
+  47,132,83,209,0,237,32,252,177,91,106,203,190,57,74,76,88,207,208,239,170,
+  251,67,77,51,133,69,249,2,127,80,60,159,168,81,163,64,143,146,157,56,245,
+  188,182,218,33,16,255,243,210,205,12,19,236,95,151,68,23,196,167,126,61,
+  100,93,25,115,96,129,79,220,34,42,144,136,70,238,184,20,222,94,11,219,224,
+  50,58,10,73,6,36,92,194,211,172,98,145,149,228,121,231,200,55,109,141,213,
+  78,169,108,86,244,234,101,122,174,8,186,120,37,46,28,166,180,198,232,221,
+  116,31,75,189,139,138,112,62,181,102,72,3,246,14,97,53,87,185,134,193,29,
+  158,225,248,152,17,105,217,142,148,155,30,135,233,206,85,40,223,140,161,
+  137,13,191,230,66,104,65,153,45,15,176,84,187,22);
+
+AES_ShiftRowTab = new Array(0,5,10,15,4,9,14,3,8,13,2,7,12,1,6,11);
+
+function AES_SubBytes(state, sbox) {
+  for(var i = 0; i < 16; i++)
+    state[i] = sbox[state[i]];  
+}
+
+function AES_AddRoundKey(state, rkey) {
+  for(var i = 0; i < 16; i++)
+    state[i] ^= rkey[i];
+}
+
+function AES_ShiftRows(state, shifttab) {
+  var h = new Array().concat(state);
+  for(var i = 0; i < 16; i++)
+    state[i] = h[shifttab[i]];
+}
+
+function AES_MixColumns(state) {
+  for(var i = 0; i < 16; i += 4) {
+    var s0 = state[i + 0], s1 = state[i + 1];
+    var s2 = state[i + 2], s3 = state[i + 3];
+    var h = s0 ^ s1 ^ s2 ^ s3;
+    state[i + 0] ^= h ^ AES_xtime[s0 ^ s1];
+    state[i + 1] ^= h ^ AES_xtime[s1 ^ s2];
+    state[i + 2] ^= h ^ AES_xtime[s2 ^ s3];
+    state[i + 3] ^= h ^ AES_xtime[s3 ^ s0];
+  }
+}
+
+function AES_MixColumns_Inv(state) {
+  for(var i = 0; i < 16; i += 4) {
+    var s0 = state[i + 0], s1 = state[i + 1];
+    var s2 = state[i + 2], s3 = state[i + 3];
+    var h = s0 ^ s1 ^ s2 ^ s3;
+    var xh = AES_xtime[h];
+    var h1 = AES_xtime[AES_xtime[xh ^ s0 ^ s2]] ^ h;
+    var h2 = AES_xtime[AES_xtime[xh ^ s1 ^ s3]] ^ h;
+    state[i + 0] ^= h1 ^ AES_xtime[s0 ^ s1];
+    state[i + 1] ^= h2 ^ AES_xtime[s1 ^ s2];
+    state[i + 2] ^= h1 ^ AES_xtime[s2 ^ s3];
+    state[i + 3] ^= h2 ^ AES_xtime[s3 ^ s0];
+  }
+}
+
+//    alert("typeof sha1: " + typeof(sha1));
+/*
+
+var $ = function(selector) {
+  var i, nl, sels, src = document, dst = [];
+  sels = selector.split(" ");
+  while(sels.length > 0) {
+    sel = sels.shift();
+    if(sel.charAt(0) === '#') { // id
+        elems.push(document.getElementById(sel.substring(1));
+      }
+    } else if(sel.charAt(0) === ".") { // class
+        if(elems) {
+          for(i = 0; i < elems.length; i++) {
+            
+          }
+        } else {
+          nl = document.getElementsByClassName(sel.substring(1))
+            for(i = 0; i < nl.length;i++) {
+              elems.push(nl[i]);
+            }
+        }
+      }
+    }                     
+*/
+</script>
+
+<style>
+body { font-family: courier }
+.label { width: 100; display: inline-block}
+.pp { width: 400 }
+
+</style>
+</head>
+
+<body onload="loaded()">
+
+<script>
+//alert("hash: " + sha1.hash("hello", false));
+
+AES_Init();
+
+/*
+//var msg = "hello12345678901";
+var msg = "hello";
+
+var block = new Array(16);
+for(var i = 0; i < msg.length; i++)
+  block[i] = msg.charCodeAt(i);
+
+var pad = 16 - i;
+
+while(i < 16) {
+  block[i++] = pad;
+}
+
+var key = new Array(32);
+for(var i = 0; i < 32; i++)
+  key[i] = i;
+
+//hexdump(key);
+
+AES_ExpandKey(key);
+
+var b1 = block.slice(0);
+AES_Encrypt(b1, key);
+hexdump(b1);
+
+//AES_Done();
+*/
+
+function hexdump(data) {
+  console.log("hexdump data, length: " + data.length);
+
+  var i, line = "hexdump, length: " + data.length, len, m,a, ascii = "";
+  
+  var num, str = typeof data === "string";
+
+  len = data.length;
+  for(i = 0; i < len; i++) {
+    m = i & 0xf;
+    if(m === 0) {
+        console.log(line + " " + ascii);
+      line = ("0000"+Number(i).toString(16) ).slice(-4) + " ";
+      ascii = "";
+    } else if(m === 8) {
+      line += "-";
+    } else {
+      line += " ";
+    }
+    num = str ? data.charCodeAt(i): data[i];
+    line += ("00"+Number(num).toString(16) ).slice(-2);
+    if(num >= 32 && num < 128) {
+        ascii += String.fromCharCode(num);
+    } else {
+        ascii += ".";
+    }
+  }
+  console.log(line + ("                                                     ").substring(line.length) + ascii);
+}
+
+function hex2str(data) {
+  var i, res = "";
+  for(i = 0; i < data.length; i += 2) { 
+    res += String.fromCharCode(parseInt(data.slice(i,i+2),16));
+  }                          
+  return res;
+}
+
+function hex2array(data) {
+  var i, res = [];
+  for(i = 0; i < data.length; i += 2) { 
+    res.push(parseInt(data.slice(i,i+2),16));
+  }                          
+  return res;
+}
+
+
+function hash(data, count) {
+  var res = sha1.hash(data);
+
+  if(count) {
+    for(i = 1; i < count; i ++) {
+      res = sha1.hash(hex2str(res));
+    }
+  }
+  return res;
+}
+
+function EVP_BytesToKey_aes_256_cbc_sha1(salt, data, count) {
+  // need 32 (key) + 16 (iv) bytes, 48*8=384 bits, e.g 3 sha1 rounds
+
+  var i;
+
+  salt = hex2str(salt);
+
+  var out1 = hash(data+salt, count);  
+  var out2 = hash(hex2str(out1) + data + salt);
+  var out3 = hash(hex2str(out2) + data + salt);
+
+  out = out1+out2+out3;
+
+  var key = out.slice(0,64);
+  var iv = out.slice(64,64+32);
+  return { key: key, iv: iv};
+}
+
+function encrypt(key, msg) {
+  var i,j, bkey = hex2array(key.key), iv = hex2array(key.iv), ciphertext = "";
+
+  AES_ExpandKey(bkey);
+
+  //console.log("msg: " + msg);
+  
+  var block = [];
+  for(i = 0; i < msg.length; i += 16) {
+    for(j = 0; j < 16 && i+j < msg.length; j++) {
+      block[j] = msg.charCodeAt(i+j);
+    }
+
+
+    // pad with the length of padding as value
+    while(j < 16) {
+      block[j++] = 1 + (msg.length - i);
+    }
+
+    //console.log("block: " + i + ", length: " + block.length);
+    //hexdump(block);
+
+    // encrypt block using AES256
+    AES_Encrypt(block, bkey);
+
+    //console.log("ciphertext: " + i + ", length: " + block.length);
+    //hexdump(block);
+
+    //console.log("block as array: " + block);
+    //console.log("block as string: " + String.fromCharCode.apply(this, block));
+
+    ciphertext += String.fromCharCode.apply(this, block);
+  }
+
+  //console.log("Ciphertext: ");
+  //hexdump(ciphertext);
+  
+  return window.btoa(ciphertext);
+}
+
+function decrypt(key, ciphertext) {
+  var i,j, bkey = hex2array(key.key), iv = hex2array(key.iv), msg = "";
+
+  //console.log("Ciphertext: " + ciphertext);
+
+  var bciphertext = atob(ciphertext);
+
+  var block = [];
+
+  AES_ExpandKey(bkey);
+
+  for(i = 0; i < bciphertext.length; i += 16) {
+    for(j = 0; j < 16; j++) {
+      block[j] = bciphertext.charCodeAt(i+j);
+    }
+
+    //console.log("block: " + i + ", length: " + block.length);
+    //hexdump(block);
+
+    // decrypt block using AES256
+    AES_Decrypt(block, bkey);
+
+    //console.log("plaintext: " + i + ", length: " + block.length);
+    //hexdump(block);
+
+    msg += String.fromCharCode.apply(this, block);
+  }
+
+  return msg;
+}
+
+function storeData(data) {
+  $('#data-store').text(data);
+}
+
+function readData() {
+  return $('#data-store').text();
+}
+
+function lockVault() {
+  // dont lock empty vault
+  if($('#data-edit').val().length !== 0) {
+    
+    if( (($('#passphrase').val() === $('#passverify').val())) ||
+        (!isEmpty() && unlockVault()) ) {
+
+      console.log("lockVault");
+
+      var salt = "4142434445";
+      var count = 1000;
+      var key = EVP_BytesToKey_aes_256_cbc_sha1(salt, $('#passphrase').val(), count);
+      storeData(salt + ":" + count + ":" + encrypt(key, Date.now() + ":" + btoa($('#data-edit').val()) + ":VAULT1.0"));
+   
+    } else {
+      console.log("Failed to lock vault, empty: " + isEmpty());
+    }
+  }
+}
+
+function unlockVault() {
+  var parts, data = readData();
+
+  console.log("unlockVault");
+
+  if(data.length !== 0) {
+    console.log("got data: " + data);
+    parts = data.split(':');
+    var salt = parts[0];
+    var count = parseInt(parts[1]);
+    var key = EVP_BytesToKey_aes_256_cbc_sha1(salt, $('#passphrase').val(), count);
+    var msg = decrypt(key, parts[2]);
+    parts = msg.split(':');
+    console.log("parts: ", parts);
+    if(parts.length === 3 && parts[2].indexOf("VAULT1.0") === 0) {
+      console.log("set data plain: " + atob(parts[1]));
+      return atob(parts[1]);
+    } else {
+      console.log("decryption failed, invalid passphrase");
+    }
+  }
+  return false;
+}
+
+function isEmpty() {
+  return $('#data-store').text().length === 0;
+}
+
+function isLocked() {
+  if($('#data-edit').val().length === 0 && !isEmpty()) {
+    console.log("vault locked");
+    return true;
+  } else {
+    console.log("vault unlocked");
+    return false
+  }
+}
+
+
+function lockUnlock() {
+  $('#status').text("");
+
+  if(isLocked()) {
+    var plaintext = unlockVault();
+    if(plaintext) {
+      $('#data-edit').val(plaintext);
+    } else {
+      $('#status').text("failed to unlock the vault, ");
+    }
+    $('#passphrase').val("");
+    $('#passverify').val("");
+  } else {
+    lockVault();
+
+    if($('#passphrase').val() !== $('#passverify').val()) {
+        $('#status').text("Passphrases dont match, ");
+    } else {
+      $('#data-edit').val("");
+      $('#passphrase').val("");
+      $('#passverify').val("");
+    }
+  }
+  updateView();
+}
+
+function updateView() {
+  var data, edit = document.getElementById("data-edit");
+
+  if(isEmpty()) {
+    $('#status').append("The vault is empty");
+    $('#pass-button').text("Lock vault!");
+    $('#verify').show();
+    $('#data-plain').show();
+
+  } else {
+    if(isLocked()) {
+      console.log("appending text locked");
+      $('#status').append("The vault is locked");
+      $('#pass-button').text("Unlock!");
+      $('#verify').hide();
+      $('#data-plain').hide();
+    } else {
+      $('#status').append("The vault is unlocked");
+      $('#pass-button').text("Lock!");
+      $('#verify').show();
+      $('#data-plain').show();
+    }
+  }
+}
+
+function loaded() {
+  $('#status').text("");
+  $('#data-edit').val("");
+  updateView();
+}
+
+</script>
+
+<div id="status"></div><br>
+
+<div class="label">Passphrase</div>
+<input id="passphrase" class="pp" type="password"/>
+<div id="verify" style="display: none">
+<div class="label">Repeat</div>
+<input id="passverify" class="pp" type="password"/>
+</div>
+<button id="pass-button" type="button" onclick="javascript:lockUnlock()"></button>
+<div id="result"></div>
+
+<div id="data-plain" style="display: none">
+<textarea  rows="72" cols="80" id="data-edit" type="text" name="data"></textarea>
+</div>
+
+<div id="data-store" style="display: none"></div>
+
+
+</body>
+</html>
