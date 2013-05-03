@@ -52,6 +52,14 @@
             return s;
         }
 
+        function toStr(n) {
+            return String.fromCharCode(n >> 24 & 0xff) + 
+                   String.fromCharCode(n >> 16 & 0xff) + 
+                   String.fromCharCode(n >>  8 & 0xff) + 
+                   String.fromCharCode(n & 0xff);
+        }
+
+
         /**
          * Generates SHA-1 hash of string
          *
@@ -146,8 +154,8 @@
                     H4 = (H4 + e) & 0xffffffff;
                 }
 
-                return toHexStr(H0) + toHexStr(H1) +
-                toHexStr(H2) + toHexStr(H3) + toHexStr(H4);
+                //return toHexStr(H0) + toHexStr(H1) + toHexStr(H2) + toHexStr(H3) + toHexStr(H4);
+                return toStr(H0) + toStr(H1) + toStr(H2) + toStr(H3) + toStr(H4);
             }
         };
 
@@ -473,6 +481,14 @@ function hexdump(data) {
   console.log(line + ("                                                     ").substring(line.length) + ascii);
 }
 
+function str2hex(data) {
+  var i, res = "";
+  for(i = 0; i < data.length; i++) { 
+    res += ("00" + (data.charCodeAt(i)).toString(16)).slice(-2);
+  }                          
+  return res;
+}
+
 function hex2str(data) {
   var i, res = "";
   for(i = 0; i < data.length; i += 2) { 
@@ -495,7 +511,7 @@ function hash(data, count) {
 
   if(count) {
     for(i = 1; i < count; i ++) {
-      res = sha1.hash(hex2str(res));
+      res = sha1.hash(res + data);
     }
   }
   return res;
@@ -509,10 +525,10 @@ function EVP_BytesToKey_aes_256_cbc_sha1(salt, data, count) {
   salt = hex2str(salt);
 
   var out1 = hash(data+salt, count);  
-  var out2 = hash(hex2str(out1) + data + salt);
-  var out3 = hash(hex2str(out2) + data + salt);
+  var out2 = hash(out1 + data + salt);
+  var out3 = hash(out2 + data + salt);
 
-  out = out1+out2+out3;
+  out = str2hex(out1+out2+out3);
 
   var key = out.slice(0,64);
   var iv = out.slice(64,64+32);
@@ -522,20 +538,24 @@ function EVP_BytesToKey_aes_256_cbc_sha1(salt, data, count) {
 function encrypt(key, msg) {
   var i,j, bkey = hex2array(key.key), iv = hex2array(key.iv), ciphertext = "";
 
+  console.log("iv:");
+  hexdump(iv);
+
   AES_ExpandKey(bkey);
 
   //console.log("msg: " + msg);
   
   var block = [];
   for(i = 0; i < msg.length; i += 16) {
-    for(j = 0; j < 16 && i+j < msg.length; j++) {
-      block[j] = msg.charCodeAt(i+j);
-    }
+    console.log("apply iv: ", iv);
 
+    for(j = 0; j < 16 && i+j < msg.length; j++) {
+      block[j] = msg.charCodeAt(i+j) ^ iv[j];
+    }
 
     // pad with the length of padding as value
     while(j < 16) {
-      block[j++] = 1 + (msg.length - i);
+      block[j++] = (1 + (msg.length - i)) ^ iv[j] ;
     }
 
     //console.log("block: " + i + ", length: " + block.length);
@@ -543,6 +563,8 @@ function encrypt(key, msg) {
 
     // encrypt block using AES256
     AES_Encrypt(block, bkey);
+
+    iv = block.slice(0);
 
     //console.log("ciphertext: " + i + ", length: " + block.length);
     //hexdump(block);
@@ -562,6 +584,9 @@ function encrypt(key, msg) {
 function decrypt(key, ciphertext) {
   var i,j, bkey = hex2array(key.key), iv = hex2array(key.iv), msg = "";
 
+//  console.log("iv:");
+//  hexdump(iv);
+  
   //console.log("Ciphertext: " + ciphertext);
 
   var bciphertext = atob(ciphertext);
@@ -578,8 +603,16 @@ function decrypt(key, ciphertext) {
     //console.log("block: " + i + ", length: " + block.length);
     //hexdump(block);
 
+    var iv_1 = block.slice(0);
+
     // decrypt block using AES256
     AES_Decrypt(block, bkey);
+    
+    for(j = 0; j < 16; j++) {
+      block[j] ^= iv[j];
+    }
+
+    iv = iv_1;
 
     //console.log("plaintext: " + i + ", length: " + block.length);
     //hexdump(block);
@@ -606,16 +639,22 @@ function lockVault() {
         (!isEmpty() && unlockVault()) ) {
 
       console.log("lockVault");
+      
+      // set passphrase
 
-      var salt = "4142434445";
-      var count = 1000;
+      // use current time in hex as salt
+      var salt = (Date.now()).toString(16);
+      var count = 4096;
+      var start = Date.now();
       var key = EVP_BytesToKey_aes_256_cbc_sha1(salt, $('#passphrase').val(), count);
+      console.log("key generated in: " + (Date.now() - start) + " ms");
       storeData(salt + ":" + count + ":" + encrypt(key, Date.now() + ":" + btoa($('#data-edit').val()) + ":VAULT1.0"));
-   
     } else {
       console.log("Failed to lock vault, empty: " + isEmpty());
+      return false;
     }
   }
+  return true;
 }
 
 function unlockVault() {
@@ -624,7 +663,7 @@ function unlockVault() {
   console.log("unlockVault");
 
   if(data.length !== 0) {
-    console.log("got data: " + data);
+    //console.log("got data: " + data);
     parts = data.split(':');
     var salt = parts[0];
     var count = parseInt(parts[1]);
@@ -670,17 +709,17 @@ function lockUnlock() {
     $('#passphrase').val("");
     $('#passverify').val("");
   } else {
-    lockVault();
-
-    if($('#passphrase').val() !== $('#passverify').val()) {
-        $('#status').text("Passphrases dont match, ");
-    } else {
-      $('#data-edit').val("");
-      $('#passphrase').val("");
-      $('#passverify').val("");
-    }
+      if(!lockVault())  {
+        if($('#passphrase').val() !== $('#passverify').val()) {
+          $('#status').text("Passphrases dont match, ");
+        } 
+      } else {
+        $('#data-edit').val("");
+        $('#passphrase').val("");
+        $('#passverify').val("");
+      }
   }
-  updateView();
+   updateView();
 }
 
 function updateView() {
