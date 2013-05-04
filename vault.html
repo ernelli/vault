@@ -422,35 +422,6 @@ body { font-family: courier }
 
 AES_Init();
 
-/*
-//var msg = "hello12345678901";
-var msg = "hello";
-
-var block = new Array(16);
-for(var i = 0; i < msg.length; i++)
-  block[i] = msg.charCodeAt(i);
-
-var pad = 16 - i;
-
-while(i < 16) {
-  block[i++] = pad;
-}
-
-var key = new Array(32);
-for(var i = 0; i < 32; i++)
-  key[i] = i;
-
-//hexdump(key);
-
-AES_ExpandKey(key);
-
-var b1 = block.slice(0);
-AES_Encrypt(b1, key);
-hexdump(b1);
-
-//AES_Done();
-*/
-
 function hexdump(data) {
   console.log("hexdump data, length: " + data.length);
 
@@ -538,16 +509,13 @@ function EVP_BytesToKey_aes_256_cbc_sha1(salt, data, count) {
 function encrypt(key, msg) {
   var i,j, bkey = hex2array(key.key), iv = hex2array(key.iv), ciphertext = "";
 
-  console.log("iv:");
-  hexdump(iv);
-
   AES_ExpandKey(bkey);
 
   //console.log("msg: " + msg);
   
   var block = [];
   for(i = 0; i < msg.length; i += 16) {
-    console.log("apply iv: ", iv);
+    //console.log("apply iv: ", iv);
 
     for(j = 0; j < 16 && i+j < msg.length; j++) {
       block[j] = msg.charCodeAt(i+j) ^ iv[j];
@@ -631,12 +599,12 @@ function readData() {
   return $('#data-store').text();
 }
 
-function lockVault() {
+function lockVault(plaintext) {
   // dont lock empty vault
-  if($('#data-edit').val().length !== 0) {
+  if(plaintext.length !== 0) {
     
-    if( (($('#passphrase').val() === $('#passverify').val())) ||
-        (!isEmpty() && unlockVault()) ) {
+    if( ($('#passphrase').val().length !== 0 && ($('#passphrase').val() === $('#passverify').val())) ||
+        (!isEmpty() && unlockVault(readData())) ) {
 
       console.log("lockVault");
       
@@ -648,17 +616,16 @@ function lockVault() {
       var start = Date.now();
       var key = EVP_BytesToKey_aes_256_cbc_sha1(salt, $('#passphrase').val(), count);
       console.log("key generated in: " + (Date.now() - start) + " ms");
-      storeData(salt + ":" + count + ":" + encrypt(key, Date.now() + ":" + btoa($('#data-edit').val()) + ":VAULT1.0"));
+      return salt + ":" + count + ":" + encrypt(key, Date.now() + ":" + btoa($('#data-edit').val()) + ":VAULT1.0");
     } else {
       console.log("Failed to lock vault, empty: " + isEmpty());
-      return false;
     }
   }
-  return true;
+  return false;
 }
 
-function unlockVault() {
-  var parts, data = readData();
+function unlockVault(data) {
+  var parts;
 
   console.log("unlockVault");
 
@@ -670,7 +637,7 @@ function unlockVault() {
     var key = EVP_BytesToKey_aes_256_cbc_sha1(salt, $('#passphrase').val(), count);
     var msg = decrypt(key, parts[2]);
     parts = msg.split(':');
-    console.log("parts: ", parts);
+    //console.log("parts: ", parts);
     if(parts.length === 3 && parts[2].indexOf("VAULT1.0") === 0) {
       console.log("set data plain: " + atob(parts[1]));
       return atob(parts[1]);
@@ -700,7 +667,7 @@ function lockUnlock() {
   $('#status').text("");
 
   if(isLocked()) {
-    var plaintext = unlockVault();
+    var plaintext = unlockVault(readData());
     if(plaintext) {
       $('#data-edit').val(plaintext);
     } else {
@@ -709,17 +676,21 @@ function lockUnlock() {
     $('#passphrase').val("");
     $('#passverify').val("");
   } else {
-      if(!lockVault())  {
-        if($('#passphrase').val() !== $('#passverify').val()) {
-          $('#status').text("Passphrases dont match, ");
-        } 
-      } else {
+      var ciphertext = lockVault($('#data-edit').val());
+
+      if(ciphertext)  {
+        storeData(ciphertext);
         $('#data-edit').val("");
         $('#passphrase').val("");
         $('#passverify').val("");
+      } else {
+        // failed to lock vault
+        if($('#passphrase').val() !== $('#passverify').val()) {
+          $('#status').text("Passphrases dont match, ");
+        } 
       }
   }
-   updateView();
+  updateView();
 }
 
 function updateView() {
