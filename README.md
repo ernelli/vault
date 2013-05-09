@@ -19,8 +19,24 @@ The key strenghening only adds about 12 bits of entropy to the passphrase so a r
 Todo
 ====
 
-- Remove the dependencies to jquery, e.g implement #id and .class selectors, as well as show, hide, val, text and append in embedded js.
-
 - Add an options/configuration section where various settings can be tweaked such as key strenghening count etc.
 
 - Fix keyboard shortcuts to trigger lock/unlock using ENTER and lock/clear vault using ESC.
+
+- Setup automatic testing using phantomjs for all vault use cases
+
+- Add a function to move ciphertext into the vault, to handle migration from one version of the vault to another, could be handled using plaintext copy-paste into an empty vault, but still nicer with ciphertext import/export
+
+- iphone testing...
+
+Done
+====
+
+- Remove the dependencies to jquery, e.g implement #id and .class selectors, as well as show, hide, val, text and append in embedded js.
+
+It's just quickly tested, should write testcases to verify all vault use cases with jquery and the _$ replacer.
+
+Roadmap
+=======
+
+- Investigate the dropbox API to automatically save the page and ciphertext in a private dropbox folder, so that the password manager can be used from different locations. Initial tests with dropbox and googledrive failed on jquery loading, but with all jquery dependencies replaced with embedded code it might work.
