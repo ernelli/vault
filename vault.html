@@ -1,6 +1,6 @@
 <html>
 <head>
-<script type="text/javascript" src="http://code.jquery.com/jquery-1.9.1.min.js"></script>
+<!-- <script type="text/javascript" src="http://code.jquery.com/jquery-1.9.1.min.js"></script> -->
 <script>
     /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
     /*  SHA-1 implementation in JavaScript | (c) Chris Veness 2002-2010 | www.movable-type.co.uk      */
@@ -381,17 +381,39 @@ function AES_MixColumns_Inv(state) {
 }
 
 //    alert("typeof sha1: " + typeof(sha1));
-/*
 
-var $ = function(selector) {
-  var i, nl, sels, src = document, dst = [];
-  sels = selector.split(" ");
-  while(sels.length > 0) {
-    sel = sels.shift();
-    if(sel.charAt(0) === '#') { // id
-        elems.push(document.getElementById(sel.substring(1));
+// inline jquery replacement, implements only used selectors and methods
+//
+// # selector
+//
+// show, hide, text, append, val
+
+var _$ = function(selectors) {
+  var p, i, nl, parts, part, selector, elem, src, res = [];
+  selectors = selectors.split(",");
+
+  while(selectors.length > 0) {
+    selector = selectors.shift();
+    src = [ document ]
+    dst = [];
+
+    parts = selector.split(" ");
+
+    while(parts.length > 0) {
+      part = parts.shift();
+      
+      if(part.charAt(0) === '#') { // id
+        for(i = 0; i < src.length; i++) {
+          elem = src[i].getElementById(part.substring(1));
+          if(elem) {
+            dst.push(elem);                       
+            break;
+          }
+        }
       }
-    } else if(sel.charAt(0) === ".") { // class
+    }
+     /* not used yet in app
+        else if(sel.charAt(0) === ".") { // class
         if(elems) {
           for(i = 0; i < elems.length; i++) {
             
@@ -403,8 +425,79 @@ var $ = function(selector) {
             }
         }
       }
-    }                     
-*/
+    }  */                  
+
+
+    //console.log("dst[0] is: ", dst[0]);
+    res = res.concat(dst);
+    //console.log("res[0] is: ", res[0]);
+
+  }
+
+  res.each = function(cb) {
+    var i;
+    for(i = 0; i < res.length; i++) {
+      if(!cb.call(res[i], i, res[i])) {
+        return;
+      }
+    }
+  }
+
+  res.css = function(style, value) {
+    res.each(function() {
+        //console.log("set style at index: " + i);
+        //console.log("set style for element: ", el);
+        this.style[style] = value;
+        return true;
+      });
+    return res;
+  }  
+
+  res.show = function() {
+    res.css('display','block');
+    return res;
+  }
+
+  res.hide = function() {
+    res.css('display','none');
+    return res;
+  }
+
+  res.text = function(str) {
+    var prev = "";
+    res.each(function() {
+        prev += this.textContent;
+        if(str !== undefined) {
+          this.textContent = str;
+        }
+      });
+    return prev;
+  }
+
+  res.val = function(str) {
+    var prev = "";
+    res.each(function() {
+        prev += this.value;
+        if(str !== undefined) {
+          this.value = str;
+        }
+      });
+    return prev;
+  }
+
+  res.append = function(val) {
+    if(typeof val === "string") {
+      res.each(function() {
+          this.textContent = this.textContent + val;
+        });
+    } /* dom manipulation not implemented yet since its not used.
+         else {} 
+       */
+  }
+
+  return res;
+}
+
 </script>
 
 <style>
@@ -590,6 +683,8 @@ function decrypt(key, ciphertext) {
 
   return msg;
 }
+
+$ = _$;
 
 function storeData(data) {
   $('#data-store').text(data);
